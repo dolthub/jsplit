@@ -7,6 +7,13 @@ form [key]_%02d.jsonl where [key] is the key for the list being processed and %0
 for the files. Order of data in the lists is maintained across the files. Non-list items in the root of the JSON
 document will be written to a file root.json
 
+# Installation
+
+To install the application you will need [Golang installed](https://go.dev/doc/install) and you will need to clone
+this repository.  Once you have cloned the repository cd into the cloned jsplit directory and run:
+
+`go install .`
+
 # Usage
 
 jsplit <file.json>
@@ -38,7 +45,7 @@ jsplit <file.json>
 
 #### root.json
 
-#### example_json/root.json
+#### example\_json/root.json
 
 ```json
 {
@@ -49,7 +56,7 @@ jsplit <file.json>
 }
 ```
 
-#### example_json/list_00.json
+#### example\_json/list\_00.json
 
 ```json lines
 {"idx": 0, "name":  "alex"}
@@ -58,4 +65,4 @@ jsplit <file.json>
 ```
 
 In the case that a jsonl output file exceeds 4GB a new file will be created with the next sequence number. In this case
-the next output file would be list_01.jsonl
+the next output file would be list\_01.jsonl
