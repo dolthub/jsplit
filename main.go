@@ -17,14 +17,14 @@ func errExit(err error) {
 }
 
 func main() {
-	if len(os.Args) != 1 {
+	if len(os.Args) != 2 {
 		errExit(fmt.Errorf("usage: jsplit <file>"))
 	}
 
 	filename := os.Args[1]
 	dir := strings.Replace(filename, ".", "_", -1)
 
-	if _, err := os.Stat(filename); err == nil {
+	if _, err := os.Stat(dir); err == nil {
 		errExit(fmt.Errorf("error: %s already exists", filename))
 	} else if !os.IsNotExist(err) {
 		errExit(err)
