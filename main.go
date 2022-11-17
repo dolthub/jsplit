@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -17,20 +18,30 @@ func errExit(err error) {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		errExit(fmt.Errorf("usage: jsplit <file>"))
+	var filename string
+	var outputPath string
+
+	flag.StringVar(&filename, "file", "", "Source JSON file")
+	flag.StringVar(&outputPath, "output", "", "Output path for parsed JSON files (optional)")
+	flag.Parse()
+
+	if len(filename) == 0 {
+		fmt.Println("Usage: jsplit -file <json_file> -output <output_path>")
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
-	filename := os.Args[1]
-	dir := strings.Replace(filename, ".", "_", -1)
+	if len(outputPath) == 0 {
+		outputPath = strings.Replace(filename, ".", "_", -1)
+	}
 
-	if _, err := os.Stat(dir); err == nil {
+	if _, err := os.Stat(outputPath); err == nil {
 		errExit(fmt.Errorf("error: %s already exists", filename))
 	} else if !os.IsNotExist(err) {
 		errExit(err)
 	}
 
-	err := os.Mkdir(dir, os.ModePerm)
+	err := os.Mkdir(outputPath, os.ModePerm)
 	errExit(err)
 
 	rd, err := AsyncReaderFromFile(filename, 1024*1024)
@@ -40,6 +51,6 @@ func main() {
 	ctx := context.Background()
 	ctx = rd.Start(ctx)
 
-	err = SplitStream(ctx, rd, dir)
+	err = SplitStream(ctx, rd, outputPath)
 	errExit(err)
 }
