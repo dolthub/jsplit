@@ -40,13 +40,11 @@ this repository.  Once you have cloned the repository cd into the cloned jsplit 
 }
 ```
 
-#### Usage
+#### Example Usage
 
 `jsplit -file example.json`
 
-### Output files
-
-#### root.json
+### Example Output files
 
 #### example\_json/root.json
 
