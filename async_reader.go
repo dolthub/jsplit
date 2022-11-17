@@ -1,9 +1,11 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
 )
 
@@ -20,6 +22,16 @@ func AsyncReaderFromFile(filename string, bufferSize int) (*AsyncReader, error) 
 	f, err := os.OpenFile(filename, os.O_RDONLY, os.ModePerm)
 	if err != nil {
 		return nil, err
+	}
+
+	// if gzipped, wrap in gzip reader
+	if strings.HasSuffix(filename, ".gz") {
+		gr, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, err
+		}
+
+		return AsyncReaderFromReader(gr, bufferSize)
 	}
 
 	return AsyncReaderFromReader(f, bufferSize)
