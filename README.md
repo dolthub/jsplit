@@ -1,3 +1,17 @@
+# Fork of dolthub/jsplit
+Reworked somewhat for use in data pipelines.
+- Input and Output paths can be URIs to AWS S3 or Google Cloud Storage objects thanks to the [Google CDK](https://gocloud.dev/howto/blob/).
+- A `Split` function that wraps what was previously in `main()`, more readily allowing `split` to be used as a module in other apps.
+- Dockerfile to generate a lightweight container
+- Makefile with build, test, container build, and container deploy targets.
+
+## TODO:
+- Investigate heavy GC activity and mitigation. 
+- When calling `Split`, potentially throwing `SplitStream` into a goroutine and returning `ctx`, allowing the calling code to cancel if necessary.
+
+## Performance
+`jsplit` currently makes heavy usage of the GC. If you notice low core utilization, trading off memory usage against the GC can be done by setting a `GOGC` value far higher than the default of 200. 
+  
 # JSplit
 
 JSplit is a program that can take large JSON files and split them up into a root.json files and several
@@ -16,10 +30,12 @@ this repository.  Once you have cloned the repository cd into the cloned jsplit 
 
 # Usage
 
-`jsplit -file <input_file> [-output <output_path>]`
+`jsplit -file <input_file> -output <output_path>`
 
   * file - (Required) Name of the json or or gz encoded json file being split into jsonl files
-  * output - (Optional) Output directory. If not provided, a directory will be created based on the name of the input file.  For example, if the file myfile.json is being split and an output direce a directory named myfile\_json would be created and output would be written there.
+  * output - (Required) Output directory. 
+
+Input and output can be either local filesystem paths or AWS S3 or Google Cloud Storage URIs. 
 
 # Example
 
@@ -42,7 +58,7 @@ this repository.  Once you have cloned the repository cd into the cloned jsplit 
 
 #### Example Usage
 
-`jsplit -file example.json`
+`jsplit -file example.json` -output s3://mybucket/example_json/
 
 ### Example Output files
 

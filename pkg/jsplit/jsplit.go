@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"context"
@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/lillianhealth/jsplit/pkg/cloud"
 )
 
 const (
@@ -44,6 +47,7 @@ func init() {
 // non-whitespace character or 0 if the iterator has been exhausted
 func SkipWhitespace(itr *BufferedByteStreamIter) {
 	var ch byte
+
 	for {
 		ch = itr.Next()
 		if !isWhitespace[ch] {
@@ -61,6 +65,7 @@ func SkipWhitespace(itr *BufferedByteStreamIter) {
 // IsNext returns an error if the first non-whitespace character is different than expected.
 func IsNext(itr *BufferedByteStreamIter, expected byte) error {
 	SkipWhitespace(itr)
+
 	ch := itr.Next()
 	if ch != expected {
 		return fmt.Errorf("expected '%v' found '%v'", rune(ch), rune(expected))
@@ -72,6 +77,7 @@ func IsNext(itr *BufferedByteStreamIter, expected byte) error {
 // ParseUntil reads from the iterator until the specified byte is found
 func ParseUntil(itr *BufferedByteStreamIter, findCh byte) ([]byte, error) {
 	var prev byte
+
 	for {
 		ch := itr.Next()
 		if ch == 0 {
@@ -111,8 +117,14 @@ var parseObjBuffer = make([]byte, 128*1024)
 // change when ParseObject is called again
 func ParseObject(itr *BufferedByteStreamIter) ([]byte, error) {
 	SkipWhitespace(itr)
+
+	var (
+		closeCh  byte
+		lastOpen byte
+		prev     byte
+	)
+
 	ch := itr.Next()
-	var closeCh byte
 	switch ch {
 	case OpenCB:
 		closeCh = CloseCB
@@ -125,9 +137,8 @@ func ParseObject(itr *BufferedByteStreamIter) ([]byte, error) {
 	parseObjBuffer = parseObjBuffer[:1]
 	parseObjBuffer[0] = ch
 
-	var prev byte
-	var lastOpen byte
 	openStack := NewByteStack()
+
 	for {
 		ch := itr.Next()
 		if ch == 0 {
@@ -136,11 +147,12 @@ func ParseObject(itr *BufferedByteStreamIter) ([]byte, error) {
 
 		if isWhitespace[ch] {
 			if lastOpen == QM {
-				if ch == CR {
+				switch ch {
+				case CR:
 					parseObjBuffer = append(parseObjBuffer, Escape, Escape, byte('r'))
-				} else if ch == LF {
+				case LF:
 					parseObjBuffer = append(parseObjBuffer, Escape, Escape, byte('n'))
-				} else {
+				default:
 					parseObjBuffer = append(parseObjBuffer, ch)
 				}
 			}
@@ -149,6 +161,7 @@ func ParseObject(itr *BufferedByteStreamIter) ([]byte, error) {
 		}
 
 		parseObjBuffer = append(parseObjBuffer, ch)
+
 		switch lastOpen {
 		case 0:
 			if ch == closeCh {
@@ -190,6 +203,8 @@ func ParseObject(itr *BufferedByteStreamIter) ([]byte, error) {
 	}
 }
 
+type ListAddFunc func(item []byte) error
+
 type ParentType int
 
 const (
@@ -197,15 +212,14 @@ const (
 	List
 )
 
-var emptyListBytes = []byte{}
-
 // ParseVal parses a json value
 func ParseVal(itr *BufferedByteStreamIter, addFn ListAddFunc, parentType ParentType) (bool, []byte, error) {
 	SkipWhitespace(itr)
+
 	ch := itr.Next()
 	switch ch {
 	case 0:
-		return false, nil, errors.New("Reached EOF while parsing value")
+		return false, nil, errors.New("reached EOF while parsing value")
 
 	case QM:
 		val, err := ParseUntil(itr, QM)
@@ -217,30 +231,32 @@ func ParseVal(itr *BufferedByteStreamIter, addFn ListAddFunc, parentType ParentT
 
 		if parentType == None {
 			return true, nil, ParseList(itr, addFn)
-		} else {
-			listObj, err := ParseObject(itr)
-			return true, listObj, err
 		}
+
+		listObj, err := ParseObject(itr)
+
+		return true, listObj, err
 
 	case OpenCB:
 		itr.Advance(-1)
 		itr.Skip()
 		val, err := ParseObject(itr)
+
 		return false, val, err
 
 	default:
 		if ch == CloseSB && parentType == List {
 			itr.Advance(-1)
 			return true, nil, nil
-		} else {
-			for {
-				ch = itr.Next()
-				if ch == COMMA || ch == CloseSB || ch == CloseCB {
-					itr.Advance(-1)
-					return false, itr.Value(), nil
-				} else if ch == 0 {
-					return false, nil, errors.New("reached EOF while parsing value")
-				}
+		}
+
+		for {
+			ch = itr.Next()
+			if ch == COMMA || ch == CloseSB || ch == CloseCB {
+				itr.Advance(-1)
+				return false, itr.Value(), nil
+			} else if ch == 0 {
+				return false, nil, errors.New("reached EOF while parsing value")
 			}
 		}
 	}
@@ -249,12 +265,14 @@ func ParseVal(itr *BufferedByteStreamIter, addFn ListAddFunc, parentType ParentT
 // ParseList parses a json list calling addFn for each list item
 func ParseList(itr *BufferedByteStreamIter, addFn func(item []byte) error) error {
 	SkipWhitespace(itr)
+
 	ch := itr.Next()
 	if ch != OpenSB {
 		return fmt.Errorf("unexpected char '%v' found while looking for '['", string(ch))
 	}
 
 	itr.Skip()
+
 	for {
 		_, newVal, err := ParseVal(itr, nil, List)
 		if err != nil {
@@ -283,19 +301,22 @@ func ParseList(itr *BufferedByteStreamIter, addFn func(item []byte) error) error
 // SplitStream processes a json byte stream reading it and sending json lists in the root of the json document to jsonl
 // files sharded based on the size of the data written. Non-List root level objects are written to a file named root.json
 func SplitStream(ctx context.Context, rd ByteStream, dir string) error {
-	itr := NewBufferedStreamIter(rd, ctx)
+	itr := NewBufferedStreamIter(ctx, rd)
 
 	SkipWhitespace(itr)
+
 	ch := itr.Next()
 	if ch != '{' {
-		fmt.Errorf("Invalid format. Only json objects are supported")
+		return fmt.Errorf("invalid format. only json objects are supported")
 	}
+
 	itr.Skip()
 
 	start := time.Now()
 	rootItems := make([]byte, 0, 128*1024)
 	rootItems = append(rootItems, []byte("{\n")...)
 	initialLen := len(rootItems)
+
 	for {
 		key, err := ParseKey(itr)
 		if err != nil {
@@ -304,6 +325,7 @@ func SplitStream(ctx context.Context, rd ByteStream, dir string) error {
 
 		fileFactory := NewBufferedWriterFactory(dir, string(key[1:len(key)-1]), 256*1024)
 		wr := NewSplittingJsonlWriter(fileFactory.CreateWriter, 4*1024*1024*1024)
+
 		_, val, err := ParseVal(itr, wr.Add, None)
 		if err != nil {
 			return err
@@ -326,6 +348,7 @@ func SplitStream(ctx context.Context, rd ByteStream, dir string) error {
 		}
 
 		SkipWhitespace(itr)
+
 		ch := itr.Next()
 		if ch == COMMA {
 			itr.Skip()
@@ -335,15 +358,91 @@ func SplitStream(ctx context.Context, rd ByteStream, dir string) error {
 	}
 
 	rootItems = append(rootItems, []byte("\n}")...)
-	rootFile := filepath.Join(dir, "root.json")
-	err := os.WriteFile(rootFile, rootItems, os.ModePerm)
-	if err != nil {
-		return err
+
+	var rootFile string
+
+	if cloud.IsCloudURI(dir) {
+		rootFile = strings.TrimSuffix(dir, "/") + "/root.json"
+
+		w, err := cloud.NewWriter(context.TODO(), rootFile)
+		if err != nil {
+			return err
+		}
+
+		_, err = w.Write(rootItems)
+		if err != nil {
+			return err
+		}
+
+		err = w.Close()
+		if err != nil {
+			return err
+		}
+	} else {
+		rootFile = filepath.Join(dir, "root.json")
+		err := os.WriteFile(rootFile, rootItems, os.ModePerm)
+		if err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("%s written successfully\n", rootFile)
 
 	elapsed := time.Since(start)
 	fmt.Printf("Completed in %f seconds", elapsed.Seconds())
+
+	return nil
+}
+
+// SplitFile processes a json file reading it and sending json lists in the root of the json document to jsonl
+func Split(filename, outputPath string, overwrite bool) error {
+	var (
+		fi    os.FileInfo
+		err   error
+		rd    *AsyncReader
+		perms os.FileMode = 0o755
+	)
+
+	// create output path if it doesn't exist
+	// or if it does exist, remove it if overwrite is true
+	if !cloud.IsCloudURI(outputPath) {
+		fi, err = os.Stat(outputPath)
+
+		switch {
+		// if we ecountered an error and it's not a "file does not exist" error, exit
+		case err != nil && !os.IsNotExist(err):
+			return err
+		// if the file exists and it's a directory, exit unless overwrite is true
+		case err == nil && fi.IsDir() && !overwrite:
+			return fmt.Errorf("error: %s already exists", outputPath)
+		// if the file exists and it's a directory, remove it if overwrite is true
+		case err == nil && fi.IsDir() && overwrite:
+			err = os.RemoveAll(outputPath)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = os.MkdirAll(outputPath, perms)
+		if err != nil {
+			return err
+		}
+	}
+
+	rd, err = AsyncReaderFromFile(filename, 1024*1024)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Reading %s\n", filename)
+
+	ctx := context.Background()
+	ctx = rd.Start(ctx)
+
+	err = SplitStream(ctx, rd, outputPath)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

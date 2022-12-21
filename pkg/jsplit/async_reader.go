@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"compress/gzip"
@@ -7,26 +7,38 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/lillianhealth/jsplit/pkg/cloud"
 )
 
 // AsyncReader reads an io.Reader asynchronously
 type AsyncReader struct {
-	readCh     chan []byte
 	rd         io.Reader
+	readCh     chan []byte
 	bufferSize int
 	isClosed   int32
-}
+} // reordered to pack better
 
-// AsyncReaderFromFile creates an AsyncReader for reading the specified file
-func AsyncReaderFromFile(filename string, bufferSize int) (*AsyncReader, error) {
-	f, err := os.OpenFile(filename, os.O_RDONLY, os.ModePerm)
-	if err != nil {
-		return nil, err
+// AsyncReaderFromFile creates an AsyncReader for reading from a Google Cloud Storage object
+func AsyncReaderFromFile(uri string, bufferSize int) (*AsyncReader, error) {
+	var r io.Reader
+	var err error
+
+	if cloud.IsCloudURI(uri) {
+		r, err = cloud.NewReader(context.TODO(), uri)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		r, err = os.Open(uri)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// if gzipped, wrap in gzip reader
-	if strings.HasSuffix(filename, ".gz") {
-		gr, err := gzip.NewReader(f)
+	if strings.HasSuffix(uri, ".gz") {
+		gr, err := gzip.NewReader(r)
 		if err != nil {
 			return nil, err
 		}
@@ -34,7 +46,7 @@ func AsyncReaderFromFile(filename string, bufferSize int) (*AsyncReader, error) 
 		return AsyncReaderFromReader(gr, bufferSize)
 	}
 
-	return AsyncReaderFromReader(f, bufferSize)
+	return AsyncReaderFromReader(r, bufferSize)
 }
 
 // AsyncReaderFromReader returns an AsyncReader for reading the supplied io.Reader
@@ -67,6 +79,7 @@ func (afr *AsyncReader) Start(ctx context.Context) context.Context {
 			if err == io.EOF {
 				close(afr.readCh)
 				atomic.StoreInt32(&afr.isClosed, 1)
+
 				return
 			}
 		}

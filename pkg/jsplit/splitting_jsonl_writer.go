@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"errors"
@@ -13,13 +13,12 @@ type CreateWriterFn func() (io.WriteCloser, error)
 // SplittingJsonlWriter receives json objects one at a time, and it writes these objects in jsonl format to a series of
 // files closing streams and creating new ones any time a size threshold is reached
 type SplittingJsonlWriter struct {
-	createWriter CreateWriterFn
 	wr           io.WriteCloser
-
+	createWriter CreateWriterFn
 	splitSize    uint64
 	writtenBytes uint64
 	writtenItems int
-}
+} // repacked by gopium
 
 // NewSplittingJsonlWriter returns a *SplittingJsonlWriter which creates streams using the supplied function.  These streams
 // are closed and new ones created any time a stream has had more than splitSize bytes written to it
@@ -52,6 +51,7 @@ func (sjwr *SplittingJsonlWriter) Add(item []byte) error {
 
 	written := 0
 	toWrite := len(item)
+
 	for written < toWrite {
 		n, err := sjwr.wr.Write(item[written:])
 		if err != nil {

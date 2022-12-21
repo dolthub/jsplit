@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"bytes"
@@ -80,10 +80,10 @@ type ErroringReader struct {
 	reads          int
 }
 
-func (er *ErroringReader) Read(bytes []byte) (int, error) {
+func (er *ErroringReader) Read(b []byte) (int, error) {
 	if er.reads < er.errAfterNReads {
 		er.reads++
-		return er.Reader.Read(bytes)
+		return er.Reader.Read(b)
 	}
 
 	return 0, er.err
@@ -91,7 +91,6 @@ func (er *ErroringReader) Read(bytes []byte) (int, error) {
 
 func TestReadError(t *testing.T) {
 	const size = 16 * 1024
-	const readSize = 32
 	const errAfterNReads = 4
 
 	buffer := make([]byte, size)

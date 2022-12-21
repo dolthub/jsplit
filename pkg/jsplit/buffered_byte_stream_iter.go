@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"context"
@@ -14,13 +14,12 @@ type ByteStream interface {
 type BufferedByteStreamIter struct {
 	stream ByteStream
 	ctx    context.Context
-
 	buffer []byte
 	pos    int
 }
 
 // NewBufferStreamIter returns a *BufferedByteStreamIter for iterating over the bytes of the given byte stream
-func NewBufferedStreamIter(stream ByteStream, readCtx context.Context) *BufferedByteStreamIter {
+func NewBufferedStreamIter(readCtx context.Context, stream ByteStream) *BufferedByteStreamIter {
 	return &BufferedByteStreamIter{
 		stream: stream,
 		buffer: nil,
@@ -69,6 +68,7 @@ func (itr *BufferedByteStreamIter) Value() []byte {
 	val := itr.buffer[:itr.pos]
 	itr.buffer = itr.buffer[itr.pos:]
 	itr.pos = 0
+
 	return val
 }
 

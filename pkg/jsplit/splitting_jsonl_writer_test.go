@@ -1,11 +1,12 @@
-package main
+package jsplit
 
 import (
 	"bytes"
-	"github.com/stretchr/testify/require"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type BufWriteCloser struct {

@@ -1,11 +1,12 @@
-package main
+package jsplit
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 type TestByteStream struct {
@@ -44,7 +45,7 @@ func (tbs *TestByteStream) RequireEqual(t *testing.T, bytes []byte) {
 func TestBufferedByteStreamIter(t *testing.T) {
 	testStr := "this is a test. I will use it to validate functionality"
 	tbs := NewTestByteStream([]byte(testStr), 8)
-	itr := NewBufferedStreamIter(tbs, context.Background())
+	itr := NewBufferedStreamIter(context.Background(), tbs)
 
 	splitWords := strings.Split(testStr, " ")
 	var words []string

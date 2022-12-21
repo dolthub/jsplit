@@ -1,4 +1,4 @@
-package main
+package jsplit
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func TestIsWhitespace(t *testing.T) {
 func NewTestItr(s string) *BufferedByteStreamIter {
 	ctx := context.Background()
 	stream := NewTestByteStream([]byte(s), 32)
-	itr := NewBufferedStreamIter(stream, ctx)
+	itr := NewBufferedStreamIter(ctx, stream)
 
 	return itr
 }
